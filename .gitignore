@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+Cargo*
+*.png
+*.ttf
+*sublime*
