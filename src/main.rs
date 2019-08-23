@@ -14,7 +14,9 @@ use std::collections::LinkedList;
 mod create_mesh;
 mod snake;
 mod enemy;
-use snake::{Snake};
+mod cellrect;
+use cellrect::CellRect;
+use snake::{Snake, MovingDir};
 use enemy::Enemy;
 
 use std::time::{SystemTime, Duration};
@@ -78,8 +80,8 @@ impl event::EventHandler for MainState {
 			let mut lose = false;
 			let mut enemy_ate_food = false;
 			for e in self.enemies.iter_mut() {
-				e.update(&occupied_cells);
-				if e.overlapping(self.food) {
+				e.update(occupied_cells.as_slice());
+				if e.overlapping(&CellRect {pos: self.food, w: 1, h: 1}) {
 					enemy_ate_food = true;
 				}
 			}
@@ -90,7 +92,7 @@ impl event::EventHandler for MainState {
 				lose = true;
 			}
 			for e in &self.enemies {
-				if e.overlapping(self.snake.parts[0]) {
+				if e.overlapping(&CellRect {pos: self.snake.parts[0], w: 1, h: 1}) {
 					lose = true;
 				}
 			}
@@ -99,7 +101,7 @@ impl event::EventHandler for MainState {
 			}
 			if self.snake.colliding_with_food(&self.food) {
 				self.snake.grow();
-				while self.snake.overlapping(self.food) {
+				while self.snake.overlapping(&CellRect {pos: self.food, w: 1, h: 1}) {
 					self.respawn_food();
 				}
 			}
@@ -155,6 +157,7 @@ impl event::EventHandler for MainState {
 		graphics::present(ctx)?;
 		Ok(())
 	}
+
 	fn key_down_event(&mut self, ctx: &mut Context, key: KeyCode, mods: KeyMods, _: bool) {
 		match key {
 			KeyCode::Tab => self.showscores = !self.showscores,
@@ -166,28 +169,15 @@ impl event::EventHandler for MainState {
 impl MainState {
 	pub fn spawn_enemy(&mut self, ctx: &mut Context) {
 		let mut en = Enemy::new(ctx);
-		loop {
-			en.pos = Self::random_position();
-			for other in &self.enemies {
-				if en.overlapping(other.pos) {
-					continue;
-				}
-			}
-			if self.snake.overlapping(en.pos) {
-				continue;
-			}
-			break;
-		}
+		en.rect.pos = self.random_edge_valid_rect_spawn_position(en.rect.w, en.rect.h);
 		self.enemies.push(en);
 	}
 
-	fn occupied_cells(&mut self, mut cellsvec: Vec<Point2<i32>>) -> Vec<Point2<i32>> {
-		for oe in self.enemies.iter_mut() {
-			for oc in oe.occupied_cells() {
-				cellsvec.push(*oc);
-			}
+	fn occupied_cells(&mut self, mut cellsvec: Vec<CellRect>) -> Vec<CellRect> {
+		for oe in &self.enemies {
+			cellsvec.push(oe.rect.clone());
 		}
-		cellsvec.extend_from_slice(self.snake.parts.as_slice());
+		cellsvec = self.snake.occupied_cells(cellsvec);
 		cellsvec
 	}
 
@@ -210,6 +200,37 @@ impl MainState {
 		self.snake = Snake::new(ctx);
 		self.enemies.clear();
 		self.respawn_food();
+	}
+
+	fn random_edge_valid_rect_spawn_position(&self, rectwidth: i32, rectheight: i32) -> Point2<i32> {
+		'outer: loop {
+			let random_p = match MovingDir::random() {
+				MovingDir::WEST => Point2::<i32>::from_slice(&[0, rand::thread_rng().gen_range(0, cellrows as i32 + 1 - rectwidth)]),
+				MovingDir::EAST => Point2::<i32>::from_slice(&[(cellcols as i32 - rectwidth).into(), rand::thread_rng().gen_range(0, cellrows as i32 + 1 - rectwidth)]),
+				MovingDir::NORTH => Point2::<i32>::from_slice(&[rand::thread_rng().gen_range(0, cellcols as i32 + 1 - rectheight), 0]),
+				MovingDir::SOUTH => Point2::<i32>::from_slice(&[rand::thread_rng().gen_range(0, cellcols as i32 + 1 - rectwidth), cellrows as i32+1 - rectheight]),
+			};
+
+			let rect = CellRect {
+				pos: random_p,
+				w: rectwidth,
+				h: rectheight,
+			};
+
+			for en in &self.enemies {
+				if en.rect.overlapping(&rect) {
+					continue 'outer;
+				}
+			}
+			if self.snake.overlapping(&rect) {
+				continue 'outer;
+			}
+			if random_p == self.food {
+				continue 'outer;
+			}
+
+			break random_p
+		}
 	}
 }
 

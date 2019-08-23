@@ -9,6 +9,7 @@ use crate::cellsize;
 use na::RealField;
 
 use crate::create_mesh;
+use crate::CellRect;
 
 use rand::Rng;
 
@@ -154,9 +155,14 @@ impl Snake {
 		false
 	}
 
-	pub fn overlapping(&self, point: Point2<i32>) -> bool {
+	pub fn overlapping(&self, rect: &CellRect) -> bool {
 		for p in &self.parts {
-			if *p == point {
+			let partrect = CellRect {
+				pos: *p,
+				w: 1,
+				h: 1,
+			};
+			if partrect.overlapping(&rect) {
 				return true
 			}
 		}
@@ -209,6 +215,11 @@ impl Snake {
 		} else if keycode.contains(&KeyCode::Down) {
 			self.changingdir = self.dir.can_change_dir(MovingDir::SOUTH)
 		}
+	}
+
+	pub fn occupied_cells(&self, mut ocvec: Vec<CellRect>) -> Vec<CellRect> {
+		ocvec = self.parts.iter().map(|p| CellRect {pos: *p, w:1, h:1}).collect();
+		ocvec
 	}
 
 	pub fn draw(&mut self, ctx: &mut Context) {
