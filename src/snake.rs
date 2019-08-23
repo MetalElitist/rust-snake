@@ -8,6 +8,10 @@ use ggez::graphics;
 use crate::cellsize;
 use na::RealField;
 
+use crate::create_mesh;
+
+use rand::Rng;
+
 #[derive(Debug, Copy, Clone)]
 pub enum MovingDir {
 	NORTH,
@@ -75,6 +79,15 @@ impl MovingDir {
 		};
 		return MovingDir::EAST
 	}
+
+	pub fn random() -> MovingDir {
+		match rand::thread_rng().gen_range(0, 4) {
+			0 => MovingDir::EAST,
+			1 => MovingDir::WEST,
+			2 => MovingDir::NORTH,
+			_ => MovingDir::SOUTH,
+		}
+	}
 }
 
 pub struct Snake {
@@ -102,47 +115,13 @@ impl Snake {
 				graphics::Rect::new(0.0, 0.0, cellsize as f32, cellsize as f32), 
 				graphics::Color::new(0.9, 0.05, 0.05, 1.0)
 			).unwrap(),
-			headmesh: Snake::create_mesh(ctx, "/images/0x0.png"),
-			partsmesh_direct: Snake::create_mesh(ctx, "/images/0x3.png"),
-			partsmesh_angle: Snake::create_mesh(ctx, "/images/0x2.png"),
-			partsmesh_tail: Snake::create_mesh(ctx, "/images/0x1.png"),
+			headmesh: create_mesh::create_mesh(ctx, "/images/snake/0x0.png", cellsize.into(), cellsize.into()),
+			partsmesh_direct: create_mesh::create_mesh(ctx, "/images/snake/0x3.png", cellsize.into(), cellsize.into()),
+			partsmesh_angle: create_mesh::create_mesh(ctx, "/images/snake/0x2.png", cellsize.into(), cellsize.into()),
+			partsmesh_tail: create_mesh::create_mesh(ctx, "/images/snake/0x1.png", cellsize.into(), cellsize.into()),
 		}
 	}
 
-	pub fn create_mesh(ctx: &mut Context, texture_path: &str) -> graphics::Mesh {
-		let triangle_verts = vec![
-			graphics::Vertex {
-				pos: [cellsize as f32/2.0, cellsize as f32/2.0],
-				uv: [1.0, 1.0],
-				color: [1.0, 1.0, 1.0, 1.0],
-			},
-			graphics::Vertex {
-				pos: [-(cellsize as f32/2.0), cellsize as f32/2.0],
-				uv: [0.0, 1.0],
-				color: [1.0, 1.0, 1.0, 1.0],
-			},
-			graphics::Vertex {
-				pos: [-(cellsize as f32/2.0), -(cellsize as f32/2.0)],
-				uv: [0.0, 0.0],
-				color: [1.0, 1.0, 1.0, 1.0],
-			},
-			graphics::Vertex {
-				pos: [cellsize as f32/2.0, -(cellsize as f32/2.0)],
-				uv: [1.0, 0.0],
-				color: [1.0, 1.0, 1.0, 1.0],
-			},
-		];
-
-
-		let triangle_indices = vec![0,1,2,2,3,0];
-		let img = graphics::Image::new(ctx, texture_path).ok();
-		graphics::Mesh::from_raw(
-			ctx,
-			&triangle_verts,
-			&triangle_indices,
-			img,
-		).unwrap()
-	}
 
 	pub fn out_of_bounds(&self, left: i32, top: i32, right: i32, bottom: i32) -> bool {
 		for p in &self.parts {
