@@ -94,7 +94,9 @@ pub struct Snake {
 	pub parts: Vec<Point2<i32>>,
 	dir: MovingDir,
 	growing: bool,
+	was_adding_part: bool,
 	changingdir: MovingDir,
+	update_count: u32,
 	partsmesh: graphics::Mesh,
 	headmesh: graphics::Mesh,
 	partsmesh_direct: graphics::Mesh,
@@ -107,8 +109,10 @@ impl Snake {
 		Snake {
 			parts: vec![Point2::from_slice(&[1,20]), Point2::from_slice(&[1,21]), Point2::from_slice(&[1,22])],
 			dir: MovingDir::EAST,
+			was_adding_part: false,
 			changingdir: MovingDir::EAST,
 			growing: false,
+			update_count: 0,
 			partsmesh: graphics::Mesh::new_rectangle(
 				ctx, 
 				graphics::DrawMode::fill(),
@@ -177,15 +181,21 @@ impl Snake {
 	}
 
 	pub fn update(&mut self) {
-		self.dir = self.changingdir;
-		let dir = self.dir.to_vel();
-		let newhead = Point2::from_slice(&[self.parts[0].x + self.dir.to_vel().x, self.parts[0].y + self.dir.to_vel().y]);
-		self.parts.insert(0, newhead);
-		if !self.growing {
-			self.parts.pop();
-		} else {
-			self.growing = false;
+		let mut last_p_pos = *self.parts.last().unwrap();
+		if self.update_count % ((self.parts.len() as f32/80.0) + 17.0) as u32 == 0 {
+			self.dir = self.changingdir;
+			let dir = self.dir.to_vel();
+			let newhead = Point2::from_slice(&[self.parts[0].x + self.dir.to_vel().x, self.parts[0].y + self.dir.to_vel().y]);
+			self.parts.insert(0, newhead);
+			last_p_pos = self.parts.pop().unwrap();
+			self.was_adding_part = false;
 		}
+		if self.growing {
+			self.growing = false;
+			self.parts.push(last_p_pos);
+			self.was_adding_part = true;
+		}
+		self.update_count += 1;
 	}
 
 	pub fn hande_input(&mut self, keycode: &HashSet<KeyCode>) {
@@ -209,14 +219,16 @@ impl Snake {
 		head_draw_params.dest(drawpoint);
 		graphics::draw(ctx, &self.headmesh, (drawpoint, self.dir.rotation(), graphics::WHITE));
 
-		for (i, p) in self.parts[1..].iter().enumerate() {
+		let endslice = if self.was_adding_part {self.parts.len()-1} else {self.parts.len()};
+		let mut iters = 0;
+		for (i, p) in self.parts[1..endslice].iter().enumerate() {
 
 			let drawpoint = na::Point2::<f32>::new(p.x as f32 * cellsize as f32 + cellsize as f32/2.0, p.y as f32 * cellsize as f32 + cellsize as f32/2.0);
 			let mut parts_draw_param = graphics::DrawParam::new();
 
 			let mesh;
 			let rotation;
-			if i + 2 < self.parts.len() {
+			if i + 2 < endslice {
 				let part_angle_info = Snake::angle_rotation_info(&self.parts[i+2], p, &self.parts[i]);
 				if part_angle_info.0 {
 					mesh = &self.partsmesh_angle;
@@ -230,6 +242,8 @@ impl Snake {
 				rotation = MovingDir::part_dir(p, &self.parts[i]).rotation() + f32::pi();
 			}
 			graphics::draw(ctx, mesh, (drawpoint, rotation, graphics::WHITE));
+			iters+=1;
 		}
+		// println!("endslice {} iter {} len {}", endslice, iters, self.parts.len());
 	}
 }
