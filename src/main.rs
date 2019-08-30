@@ -14,8 +14,8 @@ use std::collections::LinkedList;
 mod create_mesh;
 mod snake;
 mod enemy;
-mod cellrect;
-use cellrect::CellRect;
+mod gridrect;
+use gridrect::GridRect;
 use snake::{Snake, MovingDir};
 use enemy::Enemy;
 
@@ -27,10 +27,11 @@ pub const cellsize: u8 = 25;
 pub const cellcols: u8 = 30;
 pub const cellrows: u8 = 23;
 
-struct MainState {
+struct MainState<'a> {
 	snake: Snake,
 	enemies: Vec<Enemy>,
-	food: Point2<i32>,
+	food: GridRect,
+	grid_rects_cache: Vec<&'a GridRect>,
 	next_update_time: i32,
 	update_delay: i32,
 	starttime: SystemTime,
@@ -50,20 +51,24 @@ struct MainState {
 	enemy_spawn_rate: f32,
 }
 
-impl MainState {
+impl<'a> MainState<'a> {
 	fn new(ctx: &mut Context) -> GameResult<MainState> {
 		let font = graphics::Font::new(ctx, "/fonts/kenvector_future_thin2.ttf")?;
 		let grass = create_mesh::create_mesh(ctx, "/images/grass.png", cellcols as u16*cellsize as u16, cellcols as u16 *cellsize as u16);
-		let food = MainState::random_position();
-		let food_meshes = read_dir("e:/Dima/Projects/rust/rust_snake/target/debug/resources/images/food")?.map(|f| create_mesh::create_mesh(ctx, format!("/images/food/{}", f.unwrap().path().file_name().unwrap().to_str().unwrap()).as_str(), cellsize.into(), cellsize.into())).collect();
-		let s = MainState {snake: Snake::new(ctx), food, next_update_time: 0, update_delay: 1000, font, starttime: SystemTime::now(), drawcount: 0, last_update_time: SystemTime::now(), time_to_update: 0, scores: vec![], showscores: false, food_meshes, active_food_mesh: 0, grass, last_counted_second_time: SystemTime::now(), fps_counter: 0, last_fps: 0, enemies: vec![Enemy::new(ctx)], enemy_spawn_rate: 0.03, update_count: 0};
+		let food = GridRect {
+			pos: MainState::random_position(),
+			w: 1,
+			h: 1,
+		};
+		let food_meshes = read_dir("./target/debug/resources/images/food")?.map(|f| create_mesh::create_mesh(ctx, format!("/images/food/{}", f.unwrap().path().file_name().unwrap().to_str().unwrap()).as_str(), cellsize.into(), cellsize.into())).collect();
+		let s = MainState {snake: Snake::new(ctx), food, next_update_time: 0, update_delay: 1000, font, starttime: SystemTime::now(), drawcount: 0, last_update_time: SystemTime::now(), time_to_update: 0, scores: vec![], showscores: false, food_meshes, active_food_mesh: 0, grass, last_counted_second_time: SystemTime::now(), fps_counter: 0, last_fps: 0, enemies: vec![Enemy::new(ctx)], enemy_spawn_rate: 0.03, update_count: 0, grid_rects_cache: Vec::with_capacity(100)};
 		Ok(s)
 	}
 }
 
 use std::rc::Rc;
 
-impl event::EventHandler for MainState {
+impl<'a> event::EventHandler for MainState<'a> {
 	fn update(&mut self, ctx: &mut Context) -> GameResult {
 		self.snake.hande_input(keyboard::pressed_keys(ctx));
 
@@ -75,13 +80,15 @@ impl event::EventHandler for MainState {
 		if self.time_to_update < 0 {
 			self.next_update_time += self.update_delay;
 			self.snake.update();
-			let occupied_cells = Vec::with_capacity(200);
-			let occupied_cells = self.occupied_cells(occupied_cells);
 			let mut lose = false;
 			let mut enemy_ate_food = false;
-			for e in self.enemies.iter_mut() {
-				e.update(occupied_cells.as_slice());
-				if e.overlapping(&CellRect {pos: self.food, w: 1, h: 1}) {
+			for i in 0..self.enemies.len() as usize {
+				let enemy = &self.enemies[i];
+				let occupied_rects: &'a[&GridRect] = self.map_rects();
+				let enemy_update_info = enemy.update_info(occupied_rects);
+				let enemy = &mut self.enemies[i];
+				enemy.update(enemy_update_info.0, enemy_update_info.1);
+				if enemy.overlapping(&self.food) {
 					enemy_ate_food = true;
 				}
 			}
@@ -92,7 +99,7 @@ impl event::EventHandler for MainState {
 				lose = true;
 			}
 			for e in &self.enemies {
-				if e.overlapping(&CellRect {pos: self.snake.parts[0], w: 1, h: 1}) {
+				if e.overlapping(&self.snake.parts[0]) {
 					lose = true;
 				}
 			}
@@ -101,7 +108,7 @@ impl event::EventHandler for MainState {
 			}
 			if self.snake.colliding_with_food(&self.food) {
 				self.snake.grow();
-				while self.snake.overlapping(&CellRect {pos: self.food, w: 1, h: 1}) {
+				while self.snake.overlapping(&GridRect {pos: self.food.pos, w: 1, h: 1}) {
 					self.respawn_food();
 				}
 			}
@@ -126,7 +133,7 @@ impl event::EventHandler for MainState {
 			e.draw(ctx);
 		}
 
-		graphics::draw(ctx, &self.food_meshes[self.active_food_mesh as usize], (na::Point2::<f32>::new(self.food.x as f32 * cellsize as f32 + cellsize as f32/2.0, self.food.y as f32 * cellsize as f32 + cellsize as f32/2.0),));
+		graphics::draw(ctx, &self.food_meshes[self.active_food_mesh as usize], (na::Point2::<f32>::new(self.food.pos.x as f32 * cellsize as f32 + cellsize as f32/2.0, self.food.pos.y as f32 * cellsize as f32 + cellsize as f32/2.0),));
 
 		let from_last_counted_second_time = self.last_counted_second_time.elapsed().unwrap().as_micros();
 
@@ -166,19 +173,23 @@ impl event::EventHandler for MainState {
 	}
 }
 
-impl MainState {
+impl<'a> MainState<'a> {
+	pub fn map_rects<'b>(&mut self) -> &'a Vec<&'b GridRect> {
+		self.grid_rects_cache.clear();
+		for p in self.snake.parts {
+			self.grid_rects_cache.push(&p);
+		}
+		for e in self.enemies {
+			self.grid_rects_cache.push(&e.rect);
+		}
+		self.grid_rects_cache.push(&self.food);
+		&self.grid_rects_cache
+	}
+
 	pub fn spawn_enemy(&mut self, ctx: &mut Context) {
 		let mut en = Enemy::new(ctx);
 		en.rect.pos = self.random_edge_valid_rect_spawn_position(en.rect.w, en.rect.h);
 		self.enemies.push(en);
-	}
-
-	fn occupied_cells(&mut self, mut cellsvec: Vec<CellRect>) -> Vec<CellRect> {
-		for oe in &self.enemies {
-			cellsvec.push(oe.rect.clone());
-		}
-		cellsvec = self.snake.occupied_cells(cellsvec);
-		cellsvec
 	}
 
 	pub fn random_position() -> Point2<i32> {
@@ -186,7 +197,11 @@ impl MainState {
 	}
 
 	pub fn respawn_food(&mut self) {
-		self.food = Self::random_position();
+		self.food = GridRect {
+			pos:Self::random_position(),
+			w: 1,
+			h: 1,
+		};
 		self.active_food_mesh = rand::thread_rng().gen_range(0, self.food_meshes.len() as u8);
 	}
 
@@ -211,7 +226,7 @@ impl MainState {
 				MovingDir::SOUTH => Point2::<i32>::from_slice(&[rand::thread_rng().gen_range(0, cellcols as i32 + 1 - rectwidth), cellrows as i32+1 - rectheight]),
 			};
 
-			let rect = CellRect {
+			let rect = GridRect {
 				pos: random_p,
 				w: rectwidth,
 				h: rectheight,
@@ -225,7 +240,7 @@ impl MainState {
 			if self.snake.overlapping(&rect) {
 				continue 'outer;
 			}
-			if random_p == self.food {
+			if random_p == self.food.pos {
 				continue 'outer;
 			}
 
