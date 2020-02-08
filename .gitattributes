@@ -1,1 +1,1 @@
-target/debug/resources/**/* filter=lfs diff=lfs merge=lfs -text
+target/debug/resources/**/*.png filter=lfs diff=lfs merge=lfs -text
