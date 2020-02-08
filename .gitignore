@@ -1,4 +1,6 @@
-/target
+target/debug/*
+target/.*json
+!target/debug/resources/
 **/*.rs.bk
 *.png
 *.ttf

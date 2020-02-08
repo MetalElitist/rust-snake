@@ -8,7 +8,7 @@ use ggez::graphics;
 use crate::cellsize;
 use na::RealField;
 
-use crate::{GridRect,create_mesh};
+use crate::create_mesh;
 
 use rand::Rng;
 
@@ -91,7 +91,7 @@ impl MovingDir {
 }
 
 pub struct Snake {
-	pub parts: Vec<GridRect>,
+	pub parts: Vec<Point2<i32>>,
 	dir: MovingDir,
 	growing: bool,
 	was_adding_part: bool,
@@ -106,10 +106,8 @@ pub struct Snake {
 
 impl Snake {
 	pub fn new(ctx: &mut Context) -> Self {
-		let headmesh = create_mesh::create_mesh(ctx, "/images/snake/0x0.PNG", cellsize.into(), cellsize.into());
-
 		Snake {
-			parts: vec![GridRect {pos: Point2::from_slice(&[1,20]), w:1, h:1}, GridRect {pos: Point2::from_slice(&[1,21]), w:1, h:1}, GridRect {pos: Point2::from_slice(&[1,22]), w:1, h:1}],
+			parts: vec![Point2::from_slice(&[1,20]), Point2::from_slice(&[1,21]), Point2::from_slice(&[1,22])],
 			dir: MovingDir::EAST,
 			was_adding_part: false,
 			changingdir: MovingDir::EAST,
@@ -121,25 +119,25 @@ impl Snake {
 				graphics::Rect::new(0.0, 0.0, cellsize as f32, cellsize as f32), 
 				graphics::Color::new(0.9, 0.05, 0.05, 1.0)
 			).unwrap(),
-			headmesh,
-			partsmesh_direct: create_mesh::create_mesh(ctx, "/images/snake/0x3.PNG", cellsize.into(), cellsize.into()),
-			partsmesh_angle: create_mesh::create_mesh(ctx, "/images/snake/0x2.PNG", cellsize.into(), cellsize.into()),
-			partsmesh_tail: create_mesh::create_mesh(ctx, "/images/snake/0x1.PNG", cellsize.into(), cellsize.into()),
+			headmesh: create_mesh::create_mesh(ctx, "/images/snake/0x0.png", cellsize.into(), cellsize.into()),
+			partsmesh_direct: create_mesh::create_mesh(ctx, "/images/snake/0x3.png", cellsize.into(), cellsize.into()),
+			partsmesh_angle: create_mesh::create_mesh(ctx, "/images/snake/0x2.png", cellsize.into(), cellsize.into()),
+			partsmesh_tail: create_mesh::create_mesh(ctx, "/images/snake/0x1.png", cellsize.into(), cellsize.into()),
 		}
 	}
 
 
 	pub fn out_of_bounds(&self, left: i32, top: i32, right: i32, bottom: i32) -> bool {
 		for p in &self.parts {
-			if p.pos.x < left || p.pos.y < top || p.pos.x > right || p.pos.y > bottom {
+			if p.x < left || p.y < top || p.x > right || p.y > bottom {
 				return true
 			}
 		}
 		false
 	}
 
-	pub fn colliding_with_food(&self, food: &GridRect) -> bool {
-		if self.parts[0].overlapping(food) {
+	pub fn colliding_with_food(&self, food: &Point2<i32>) -> bool {
+		if self.parts[0] == *food {
 			true
 		} else {
 			false
@@ -147,18 +145,18 @@ impl Snake {
 	}
 
 	pub fn eating_itself(&self) -> bool {
-		let head = &self.parts[0];
+		let headposition = self.parts[0];
 		for p in &self.parts[1..] {
-			if (*p).pos == head.pos {
+			if *p == headposition {
 				return true
 			}
 		}
 		false
 	}
 
-	pub fn overlapping(&self, rect: &GridRect) -> bool {
+	pub fn overlapping(&self, point: Point2<i32>) -> bool {
 		for p in &self.parts {
-			if p.overlapping(rect) {
+			if *p == point {
 				return true
 			}
 		}
@@ -183,17 +181,13 @@ impl Snake {
 	}
 
 	pub fn update(&mut self) {
-		let mut last_p_pos = self.parts.last().unwrap().clone();
+		let mut last_p_pos = *self.parts.last().unwrap();
 		if self.update_count % ((self.parts.len() as f32/80.0) + 17.0) as u32 == 0 {
 			self.dir = self.changingdir;
 			let dir = self.dir.to_vel();
-			let newhead = GridRect {
-				pos: Point2::from_slice(&[self.parts[0].pos.x + self.dir.to_vel().x, self.parts[0].pos.y + self.dir.to_vel().y]),
-				w: 1, 
-				h: 1,
-			};
+			let newhead = Point2::from_slice(&[self.parts[0].x + self.dir.to_vel().x, self.parts[0].y + self.dir.to_vel().y]);
 			self.parts.insert(0, newhead);
-			last_p_pos = self.parts.pop().unwrap().clone();
+			last_p_pos = self.parts.pop().unwrap();
 			self.was_adding_part = false;
 		}
 		if self.growing {
@@ -217,12 +211,8 @@ impl Snake {
 		}
 	}
 
-	pub fn occupied_rects(&self, mut ocvec: Vec<GridRect>) -> &[GridRect] {
-		self.parts.as_slice()
-	}
-
 	pub fn draw(&mut self, ctx: &mut Context) {
-		let headpart = self.parts[0].pos;
+		let headpart = self.parts[0];
 		let drawpoint = na::Point2::<f32>::new(headpart.x as f32 * cellsize as f32 + cellsize as f32/2.0, headpart.y as f32 * cellsize as f32 + cellsize as f32/2.0);
 		let mut head_draw_params = graphics::DrawParam::new();
 		head_draw_params.rotation(self.dir.rotation());
@@ -233,27 +223,27 @@ impl Snake {
 		let mut iters = 0;
 		for (i, p) in self.parts[1..endslice].iter().enumerate() {
 
-			let drawpoint = na::Point2::<f32>::new(p.pos.x as f32 * cellsize as f32 + cellsize as f32/2.0, p.pos.y as f32 * cellsize as f32 + cellsize as f32/2.0);
+			let drawpoint = na::Point2::<f32>::new(p.x as f32 * cellsize as f32 + cellsize as f32/2.0, p.y as f32 * cellsize as f32 + cellsize as f32/2.0);
 			let mut parts_draw_param = graphics::DrawParam::new();
 
 			let mesh;
 			let rotation;
 			if i + 2 < endslice {
-				let part_angle_info = Snake::angle_rotation_info(&self.parts[i+2].pos, &p.pos, &self.parts[i].pos);
+				let part_angle_info = Snake::angle_rotation_info(&self.parts[i+2], p, &self.parts[i]);
 				if part_angle_info.0 {
 					mesh = &self.partsmesh_angle;
-					rotation = MovingDir::part_dir(&p.pos, &self.parts[i].pos).rotation() + part_angle_info.1;
+					rotation = MovingDir::part_dir(p, &self.parts[i]).rotation() + part_angle_info.1;
 				} else {
 					mesh = &self.partsmesh_direct;
-					rotation = MovingDir::part_dir(&p.pos, &self.parts[i].pos).rotation();
+					rotation = MovingDir::part_dir(p, &self.parts[i]).rotation();
 				}
 			} else {
 				mesh = &self.partsmesh_tail;
-				rotation = MovingDir::part_dir(&p.pos, &self.parts[i].pos).rotation() + f32::pi();
+				rotation = MovingDir::part_dir(p, &self.parts[i]).rotation() + f32::pi();
 			}
 			graphics::draw(ctx, mesh, (drawpoint, rotation, graphics::WHITE));
 			iters+=1;
 		}
+		// println!("endslice {} iter {} len {}", endslice, iters, self.parts.len());
 	}
 }
-
