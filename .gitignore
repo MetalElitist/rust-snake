@@ -1,7 +1,5 @@
 target/debug/*
 target/.*json
-!target/debug/resources/
+!target/debug/resources
 **/*.rs.bk
-*.png
-*.ttf
 *sublime*
